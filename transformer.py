@@ -16,6 +16,12 @@ def transform_text(text, option, custom_func):
         return text.strip()
     elif option == "title":
         return text.title()
+    elif option == "replace":
+        # custom_func ở đây là tuple (find_text, replace_text)
+        find_text, replace_text = custom_func if isinstance(custom_func, tuple) else ("", "")
+        if not find_text:
+            return text  # không thay gì nếu chưa nhập
+        return text.replace(find_text, replace_text)
     elif option == "custom" and custom_func:
         try:
             func = eval(custom_func, {"__builtins__": {}})
@@ -63,11 +69,11 @@ class TransformerDialog(QDialog):
             "capitalize (First letter capitalized)",
             "title (Each Word Capitalized)",
             "strip (Remove whitespace)",
+            "replace (find → replace)",
             "custom (Python lambda)"
         ])
         self.optionBox.setMinimumHeight(30)
-        # Store true option key
-        for i, key in enumerate(["lower", "upper", "capitalize", "title", "strip", "custom"]):
+        for i, key in enumerate(["lower", "upper", "capitalize", "title", "strip", "replace", "custom"]):
             self.optionBox.setItemData(i, key)
         layout.addWidget(self.optionBox)
 
@@ -79,6 +85,26 @@ class TransformerDialog(QDialog):
         self.customEdit.setEnabled(False)
         layout.addWidget(self.customEdit)
         self.optionBox.currentIndexChanged.connect(self._update_custom_field_state)
+
+        # --- Replace inputs ---
+        replaceLayout = QGridLayout()
+        replaceLayout.addWidget(QLabel("<b>Find text:</b>"), 0, 0)
+        self.findEdit = QLineEdit()
+        self.findEdit.setPlaceholderText("Text to find")
+        self.findEdit.setMinimumHeight(30)
+        replaceLayout.addWidget(self.findEdit, 0, 1)
+
+        replaceLayout.addWidget(QLabel("<b>Replace with:</b>"), 1, 0)
+        self.replaceEdit = QLineEdit()
+        self.replaceEdit.setPlaceholderText("Replace with...")
+        self.replaceEdit.setMinimumHeight(30)
+        replaceLayout.addWidget(self.replaceEdit, 1, 1)
+
+        layout.addLayout(replaceLayout)
+
+        # Mặc định ẩn
+        self.findEdit.setEnabled(False)
+        self.replaceEdit.setEnabled(False)
 
         # --- In-place or clone ---
         self.inplaceCheck = QCheckBox("Apply in-place (overwrite selected field)")
@@ -103,102 +129,87 @@ class TransformerDialog(QDialog):
         self.load_fields()
 
     def _update_custom_field_state(self):
-        """Enable or disable the custom function field based on selection."""
         selected_option = self.optionBox.currentData()
         self.customEdit.setEnabled(selected_option == "custom")
         if selected_option != "custom":
             self.customEdit.clear()
 
-    def load_fields(self):
-        """Load the list of fields from the first available note."""
-        print("[Info] Loading note fields...")
+        is_replace = selected_option == "replace"
+        self.findEdit.setEnabled(is_replace)
+        self.replaceEdit.setEnabled(is_replace)
+        if not is_replace:
+            self.findEdit.clear()
+            self.replaceEdit.clear()
 
+    def load_fields(self):
         if self.nids_to_transform:
             sample_nid = self.nids_to_transform[0]
         else:
             all_nids = self.mw.col.find_notes("")
             if not all_nids:
                 showInfo("No notes found in your collection.")
-                print("[Warning] No notes found.")
                 self.reject()
                 return
             sample_nid = all_nids[0]
 
-        try:
-            note = self.mw.col.get_note(sample_nid)
-        except Exception as e:
-            showInfo("Failed to load note data.")
-            print(f"[Error] Could not load note data: {e}")
-            self.reject()
-            return
-
+        note = self.mw.col.get_note(sample_nid)
         fields = note.keys()
         if not fields:
             showInfo("This note type has no fields.")
-            print("[Warning] Note type has no fields.")
             self.reject()
             return
 
         self.fieldBox.clear()
         self.fieldBox.addItems(fields)
-        print(f"[Info] Loaded fields: {fields}")
 
     def apply(self):
-        """Apply the selected transformation to the chosen field(s)."""
         field = self.fieldBox.currentText()
         option = self.optionBox.currentData()
-        custom = self.customEdit.text().strip()
         inplace = self.inplaceCheck.isChecked()
 
-        print(f"[Info] Applying transformation: field='{field}', option='{option}', inplace={inplace}")
+        # ✅ Lấy đúng custom_func theo loại
+        if option == "replace":
+            find_text = self.findEdit.text()
+            replace_text = self.replaceEdit.text()
+            custom_func = (find_text, replace_text)
+        else:
+            custom_func = self.customEdit.text().strip()
 
-        # Retrieve note IDs safely
+        # Lấy danh sách note
         if self.nids_to_transform:
             nids = self.nids_to_transform
-        elif hasattr(self.mw, "browser") and getattr(self.mw, "browser", None):
-            try:
-                nids = self.mw.browser.selected_notes()
-            except Exception:
-                nids = []
-            if not nids:
-                nids = self.mw.col.find_notes("")
         else:
             nids = self.mw.col.find_notes("")
 
         if not nids:
             showInfo("No notes selected or found for transformation.")
-            print("[Warning] No notes selected or found.")
             return
 
         count = 0
-        self.mw.checkpoint("Text Field Transformation")  # safer than deprecated undo_group_*
+        self.mw.checkpoint("Text Field Transformation")
+
         try:
             for nid in nids:
                 note = self.mw.col.get_note(nid)
-                if not note:
-                    continue
-
-                if field not in note:
+                if not note or field not in note:
                     continue
 
                 original = note[field]
-                new_text = transform_text(original, option, custom)
+                new_text = transform_text(original, option, custom_func)
 
                 if new_text != original:
                     if inplace:
                         note[field] = new_text
                         note.flush()
-                        count += 1
                     else:
                         new_note = Note(self.mw.col, note.mid)
                         for k, v in note.items():
                             new_note[k] = new_text if k == field else v
                         self.mw.col.add_note(new_note)
-                        count += 1
+                    count += 1
 
             self.mw.reset()
             showInfo(f"✅ Applied transformation to {count} note(s).")
-            print(f"[Success] Transformation applied to {count} note(s).")
             self.accept()
 
         except Exception as e:
@@ -206,32 +217,25 @@ class TransformerDialog(QDialog):
             print(f"[Error] Transformation failed: {e}")
             raise
 
+
 def open_transformer_from_browser(browser):
-    """Open the transformer dialog from the Browser context menu."""
     selected_nids = browser.selected_notes()
     if not selected_nids:
         tooltip("Please select at least one note to transform.")
-        print("[Warning] No notes selected in browser.")
         return
-    print(f"[Action] Opening transformer for {len(selected_nids)} selected notes.")
     dlg = TransformerDialog(mw, nids_to_transform=selected_nids)
     dlg.setWindowModality(Qt.WindowModality.NonModal)
     dlg.setWindowFlags(Qt.WindowType.Dialog)
     dlg.show()
 
+
 def add_browser_menu_action(browser, menu):
-    """Add 'Transform Field...' option to the browser context menu."""
     action = QAction("Transform Field...", browser)
     action.triggered.connect(lambda: open_transformer_from_browser(browser))
     menu.addAction(action)
-    print("[Info] Added 'Transform Field...' to browser menu.")
 
 
 def safe_add_menu(*args):
-    """
-    Compatible with both old and new Anki hook signatures.
-    (browser) or (browser, menu)
-    """
     try:
         if len(args) == 1:
             browser = args[0]
@@ -239,16 +243,14 @@ def safe_add_menu(*args):
         elif len(args) == 2:
             browser, menu = args
         else:
-            print(f"[Warning] Unexpected args in browser_menus_did_init: {args}")
             return
 
         if menu is None:
-            print("[Warning] Menu object missing, skip adding action.")
             return
 
         add_browser_menu_action(browser, menu)
-
     except Exception as e:
         print(f"[Warning] Text Field Transformer menu hook error: {e}")
+
 
 gui_hooks.browser_menus_did_init.append(safe_add_menu)
