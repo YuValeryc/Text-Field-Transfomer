@@ -233,5 +233,28 @@ def add_browser_menu_action(browser, menu):
     print("[Info] Added 'Transform Field...' to browser menu.")
 
 
-#  Register hooks
-gui_hooks.browser_menus_did_init.append(add_browser_menu_action)
+def safe_add_menu(*args):
+    """
+    Compatible with both old and new Anki hook signatures.
+    (browser) or (browser, menu)
+    """
+    try:
+        if len(args) == 1:
+            browser = args[0]
+            menu = getattr(browser, "menu", None)
+        elif len(args) == 2:
+            browser, menu = args
+        else:
+            print(f"[Warning] Unexpected args in browser_menus_did_init: {args}")
+            return
+
+        if menu is None:
+            print("[Warning] Menu object missing, skip adding action.")
+            return
+
+        add_browser_menu_action(browser, menu)
+
+    except Exception as e:
+        print(f"[Warning] Text Field Transformer menu hook error: {e}")
+
+gui_hooks.browser_menus_did_init.append(safe_add_menu)
