@@ -1,0 +1,8 @@
+{
+  "name": "Text Field Transformer",
+  "mod": 20251102,
+  "author": "yuu",
+  "description": "Transform text fields in bulk (lowercase, uppercase, or custom function)",
+  "version": "1.0.0",
+  "min_point_version": 60
+}
