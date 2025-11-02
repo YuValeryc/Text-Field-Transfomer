@@ -213,17 +213,11 @@ def open_transformer_from_browser(browser):
         tooltip("Please select at least one note to transform.")
         print("[Warning] No notes selected in browser.")
         return
-
     print(f"[Action] Opening transformer for {len(selected_nids)} selected notes.")
-    dlg = TransformerDialog(browser, nids_to_transform=selected_nids)
+    dlg = TransformerDialog(mw, nids_to_transform=selected_nids)
     dlg.setWindowModality(Qt.WindowModality.NonModal)
-    dlg.setWindowFlags(
-        dlg.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
-    )
+    dlg.setWindowFlags(Qt.WindowType.Dialog)
     dlg.show()
-    browser._transformer_dialog = dlg
-
-
 
 def add_browser_menu_action(browser, menu):
     """Add 'Transform Field...' option to the browser context menu."""
