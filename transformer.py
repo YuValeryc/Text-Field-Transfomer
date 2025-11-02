@@ -206,14 +206,6 @@ class TransformerDialog(QDialog):
             print(f"[Error] Transformation failed: {e}")
             raise
 
-
-def open_transformer_from_tools_menu():
-    """Open the transformer dialog from the Tools menu."""
-    print("[Action] Opened transformer from Tools menu.")
-    dlg = TransformerDialog(mw)
-    dlg.exec()
-
-
 def open_transformer_from_browser(browser):
     """Open the transformer dialog from the Browser context menu."""
     selected_nids = browser.selected_notes()
@@ -221,9 +213,16 @@ def open_transformer_from_browser(browser):
         tooltip("Please select at least one note to transform.")
         print("[Warning] No notes selected in browser.")
         return
+
     print(f"[Action] Opening transformer for {len(selected_nids)} selected notes.")
-    dlg = TransformerDialog(mw, nids_to_transform=selected_nids)
-    dlg.exec()
+    dlg = TransformerDialog(browser, nids_to_transform=selected_nids)
+    dlg.setWindowModality(Qt.WindowModality.NonModal)
+    dlg.setWindowFlags(
+        dlg.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
+    )
+    dlg.show()
+    browser._transformer_dialog = dlg
+
 
 
 def add_browser_menu_action(browser, menu):
@@ -236,9 +235,3 @@ def add_browser_menu_action(browser, menu):
 
 #  Register hooks
 gui_hooks.browser_menus_did_init.append(add_browser_menu_action)
-
-#  Add to Tools menu
-action = QAction("Transform Fields (All Notes)", mw)
-action.triggered.connect(open_transformer_from_tools_menu)
-mw.form.menuTools.addAction(action)
-print("[Info] 'Transform Fields (All Notes)' added to Tools menu.")
